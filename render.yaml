@@ -59,7 +59,7 @@ services:
       # an open CORS policy; it will refuse to start until this is real
       # (see config.py's production fatal-check), which is intentional.
       - key: CORS_ORIGINS
-        value: "https://REPLACE-WITH-YOUR-FRONTEND-URL.onrender.com"
+        value: "https://securemailscope-frontend-6mvv.onrender.com/"
 
   - type: web
     name: securemailscope-frontend
@@ -76,7 +76,7 @@ services:
     # stays correct even if the backend is ever renamed) -- this assumes
     # the default *.onrender.com domain; if you attach a custom domain to
     # the backend, update this to that domain instead.
-    buildCommand: cd frontend && npm install && VITE_API_BASE_URL="https://${BACKEND_HOST}.onrender.com/api" npm run build
+    buildCommand: cd frontend && npm install && VITE_API_BASE_URL="https://securemailscope-backend-9k8b.onrender.com/api" npm run build
     staticPublishPath: frontend/dist
     envVars:
       - key: BACKEND_HOST
