@@ -1,0 +1,96 @@
+# Render Blueprint (render.yaml) — deploys SecureMailScope as two services:
+#   1. securemailscope-backend  — FastAPI, built from backend/Dockerfile
+#   2. securemailscope-frontend — static React build
+#
+# HOW TO USE:
+#   1. Push this repo to GitHub (see docs/DEPLOYMENT_RENDER.md).
+#   2. In Render: New -> Blueprint -> pick this repo. Render reads this
+#      file and creates both services.
+#   3. Frontend -> backend wiring (VITE_API_BASE_URL) is AUTOMATIC: it's
+#      resolved from the backend service's Render-assigned hostname via
+#      `fromService`, re-evaluated on every Blueprint sync, so it's never
+#      stale even if the backend is renamed. Backend -> frontend wiring
+#      (CORS_ORIGINS) is NOT automatic and needs one manual step after
+#      first deploy: Render env var VALUES are not shell-expanded (only
+#      buildCommand/startCommand strings are), so the same `fromService`
+#      trick that works for a Vite build-time variable doesn't apply to a
+#      plain runtime env var read by the FastAPI process. After the first
+#      deploy, copy the frontend's URL into the backend's CORS_ORIGINS and
+#      save (triggers a redeploy). Full walkthrough in
+#      docs/DEPLOYMENT_RENDER.md — do not guess at this value.
+#
+# Free tier notes:
+#   - `plan: free` web services spin down after 15 min idle and take
+#     ~30-60s to wake on the next request — expected on Render's free tier,
+#     not a bug.
+#   - SQLite on a free-tier disk works for a single low-traffic instance.
+#     It does NOT survive a service being recreated from scratch (only a
+#     redeploy of the same service, which reuses the same disk); for
+#     anything beyond a demo/eval deployment, add a free-tier Postgres
+#     (Render's own, or Neon/Supabase) and point DATABASE_URL at it — the
+#     SQLAlchemy models need zero code changes either way.
+
+services:
+  - type: web
+    name: securemailscope-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true   # Render generates a strong random value; do not hardcode one here
+      - key: DATABASE_URL
+        value: sqlite:///./uploads/securemailscope.db
+      - key: UPLOAD_DIR
+        value: ./uploads
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "250"
+      - key: MAX_PACKETS_PER_CAPTURE
+        value: "500000"
+      - key: ANALYSIS_TIMEOUT_SECONDS
+        value: "300"
+      # REQUIRED manual step after first deploy — see docs/DEPLOYMENT_RENDER.md.
+      # Placeholder here only so the service doesn't accidentally boot with
+      # an open CORS policy; it will refuse to start until this is real
+      # (see config.py's production fatal-check), which is intentional.
+      - key: CORS_ORIGINS
+        value: "https://REPLACE-WITH-YOUR-FRONTEND-URL.onrender.com"
+    disk:
+      name: securemailscope-uploads
+      mountPath: /app/uploads
+      sizeGB: 1
+
+  - type: web
+    name: securemailscope-frontend
+    runtime: static
+    # VITE_API_BASE_URL is a BUILD-TIME variable (Vite bakes it into the
+    # JS bundle at build time, it doesn't exist at "runtime" for a static
+    # site), so it's constructed here via shell expansion in buildCommand
+    # rather than as a plain envVar entry -- Render env var VALUES are NOT
+    # shell-expanded (no ${VAR} substitution), only buildCommand/
+    # startCommand strings are, which is why this trick works here but
+    # the equivalent for the backend's CORS_ORIGINS below does not.
+    # BACKEND_HOST resolves automatically to the backend service's actual
+    # Render subdomain slug (re-evaluated on every Blueprint sync, so it
+    # stays correct even if the backend is ever renamed) -- this assumes
+    # the default *.onrender.com domain; if you attach a custom domain to
+    # the backend, update this to that domain instead.
+    buildCommand: cd frontend && npm install && VITE_API_BASE_URL="https://${BACKEND_HOST}.onrender.com/api" npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: BACKEND_HOST
+        fromService:
+          name: securemailscope-backend
+          type: web
+          property: host
+    routes:
+      # SPA fallback: client-side routes (e.g. /cases/abc123) must resolve
+      # to index.html, not a 404, so React Router can take over.
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -1,0 +1,51 @@
+# ---- Secrets / environment ----
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# ---- Python (backend) ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# SQLite dev databases -- never commit real case data or credentials
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Uploaded evidence captures -- these are user-supplied forensic evidence,
+# potentially sensitive, and must never be committed to version control
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# ---- Node / frontend ----
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Logs ----
+*.log
+npm-debug.log*

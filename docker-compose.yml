@@ -1,0 +1,66 @@
+version: "3.9"
+
+# Default profile (no --profile flag) stays free-tier friendly: single
+# backend container, SQLite, no extra services to pay for. Pass
+# `--profile production` to additionally bring up PostgreSQL and point the
+# backend at it, for a deployment past the single-instance/free-tier stage
+# (see docs/ARCHITECTURE.md for when to make that switch).
+services:
+  backend:
+    build: ./backend
+    container_name: securemailscope-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_db:/app/data
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/securemailscope.db}
+      - UPLOAD_DIR=/app/uploads
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-250}
+      - MAX_PACKETS_PER_CAPTURE=${MAX_PACKETS_PER_CAPTURE:-500000}
+    restart: unless-stopped
+    # Free-tier-friendly resource ceiling so one large/malicious capture
+    # can't take down the host; raise these if the deployment tier allows.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  frontend:
+    build: ./frontend
+    container_name: securemailscope-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Opt-in production database: `docker compose --profile production up`.
+  # Not started by default so the free-tier/prototype path stays SQLite +
+  # zero extra services; switch to this once running more than one backend
+  # worker or needing concurrent writers, since SQLite has no story for that.
+  postgres:
+    image: postgres:16-alpine
+    container_name: securemailscope-postgres
+    profiles: ["production"]
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-securemailscope}
+      - POSTGRES_USER=${POSTGRES_USER:-securemailscope}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for the production profile}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-securemailscope}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  backend_uploads:
+  backend_db:
+  postgres_data:
